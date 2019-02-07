@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: example-apigateway-websocket
+
+Parameters:
+  DynamodbTableName:
+    Type: String
+    Default: chat_connections
+
+Globals:
+  Function:
+    Runtime: python3.7
+    Tracing: Active
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        DYNAMODB_TABLE_NAME: !Ref DynamodbTableName
+
+Resources:
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamodbTableName
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: True
+
+  OnConnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: function/
+      Handler: handler.on_connect
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamodbTableName
+
+  OnDisconnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: function/
+      Handler: handler.on_disconnect
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamodbTableName
+
+  SendMessageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: function/
+      Handler: handler.send_message
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamodbTableName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - 'execute-api:ManageConnections'
+              Resource:
+                - 'arn:aws:execute-api:*:*:*/@connections/*'
+
+Outputs:
+  ConnectionsTableArn:
+    Description: "Connections table ARN"
+    Value: !GetAtt ConnectionsTable.Arn
+
+  OnConnectFunctionArn:
+    Description: "OnConnect function ARN"
+    Value: !GetAtt OnConnectFunction.Arn
+
+  OnDisconnectFunctionArn:
+    Description: "OnDisconnect function ARN"
+    Value: !GetAtt OnDisconnectFunction.Arn
+
+  SendMessageFunctionArn:
+    Description: "SendMessage function ARN"
+    Value: !GetAtt SendMessageFunction.Arn
