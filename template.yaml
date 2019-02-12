@@ -41,6 +41,13 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref DynamodbTableName
 
+  OnConnectFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OnConnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
   OnDisconnectFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -49,6 +56,13 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref DynamodbTableName
+
+  OnDisconnectFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OnDisconnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
 
   SendMessageFunction:
     Type: AWS::Serverless::Function
@@ -64,6 +78,126 @@ Resources:
                 - 'execute-api:ManageConnections'
               Resource:
                 - 'arn:aws:execute-api:*:*:*/@connections/*'
+
+  SendMessageFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SendMessageFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: my-apigateway-websocket
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+
+  ApiGatewayOnConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      IntegrationUri: !Join
+        - ''
+        -
+          - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':apigateway:'
+          - !Ref 'AWS::Region'
+          - ':lambda:path/2015-03-31/functions/'
+          - !GetAtt OnConnectFunction.Arn
+          - /invocations
+
+  ApiGatewayOnDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      IntegrationUri: !Join
+        - ''
+        -
+          - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':apigateway:'
+          - !Ref 'AWS::Region'
+          - ':lambda:path/2015-03-31/functions/'
+          - !GetAtt OnDisconnectFunction.Arn
+          - /invocations
+      # arn:aws:apigateway:region:lambda:path/2015-03-31/functions/LambdaFunctionARN/invocations
+
+  ApiGatewaySendMessageIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      IntegrationUri: !Join
+        - ''
+        -
+          - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':apigateway:'
+          - !Ref 'AWS::Region'
+          - ':lambda:path/2015-03-31/functions/'
+          - !GetAtt SendMessageFunction.Arn
+          - /invocations
+
+  ApiGatewayOnConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target:
+        !Join [ /, [ integrations, !Ref ApiGatewayOnConnectIntegration ] ]
+    DependsOn:
+      - ApiGatewayOnConnectIntegration
+
+  ApiGatewayOnDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      Target:
+        !Join [ /, [ integrations, !Ref ApiGatewayOnDisconnectIntegration ] ]
+    DependsOn:
+      - ApiGatewayOnDisconnectIntegration
+
+  ApiGatewaySendMessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: sendmessage
+      AuthorizationType: NONE
+      Target:
+        !Join [ /, [ integrations, !Ref ApiGatewaySendMessageIntegration ] ]
+    DependsOn:
+      - ApiGatewaySendMessageIntegration
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    Properties:
+      ApiId: !Ref ApiGateway
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    Properties:
+      ApiId: !Ref ApiGateway
+    DependsOn:
+      - ApiGatewayOnConnectRoute
+      - ApiGatewayOnDisconnectRoute
+      - ApiGatewaySendMessageRoute
+
+  ApiGatewayStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: develop
+      DeploymentId: !Ref ApiGatewayDeployment
+      ApiId: !Ref ApiGateway
 
 Outputs:
   ConnectionsTableArn:
