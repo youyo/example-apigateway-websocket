@@ -15,7 +15,7 @@ build:
 ## Package
 package:
 	aws cloudformation package \
-		--template-file template.yaml \
+		--template-file .aws-sam/build/template.yaml \
 		--s3-bucket $(S3Bucket) \
 		--output-template-file $(OutputTemplateFile)
 
